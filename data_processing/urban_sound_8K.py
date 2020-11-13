@@ -6,23 +6,26 @@ np.random.seed(999)
 
 
 class UrbanSound8K:
+    #初始化，入参[路径，数据集大小，噪声类别（0-9）]
     def __init__(self, basepath, *, val_dataset_size, class_ids=None):
         self.basepath = basepath
         self.val_dataset_size = val_dataset_size
         self.class_ids = class_ids
 
+    #获取噪声数据集，
     def _get_urban_sound_8K_filenames(self):
-        urbansound_metadata = pd.read_csv(os.path.join(self.basepath, 'metadata', 'UrbanSound8K.csv'))
+        urbansound_metadata = pd.read_csv(os.path.join(self.basepath, 'metadata', 'UrbanSound8K_0_5.csv'))
 
-        # shuffle the dataframe
+        # shuffle the dataframe #打乱数据，先随机生成索引，再按照索引重新排序
         urbansound_metadata.reindex(np.random.permutation(urbansound_metadata.index))
 
         return urbansound_metadata
 
+    #通过类别获取噪声数据
     def _get_filenames_by_class_id(self, metadata):
 
         if self.class_ids is None:
-            self.class_ids = np.unique(metadata['classID'].values)
+            self.class_ids = np.unique(metadata['classID'].values) #unique去重
             print("Number of classes:", self.class_ids)
 
         all_files = []
@@ -38,6 +41,7 @@ class UrbanSound8K:
         assert len(all_files) == file_counter
         return all_files
 
+    #获取训练数据集和验证数据集
     def get_train_val_filenames(self):
         urbansound_metadata = self._get_urban_sound_8K_filenames()
 
@@ -55,6 +59,7 @@ class UrbanSound8K:
 
         return urbansound_train, urbansound_val
 
+    #获取测试数据集
     def get_test_filenames(self):
         urbansound_metadata = self._get_urban_sound_8K_filenames()
 

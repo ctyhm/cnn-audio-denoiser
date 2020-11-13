@@ -4,7 +4,7 @@ import librosa
 import sounddevice as sd
 import tensorflow as tf
 
-
+#短时傅里叶变换
 def inverse_stft_transform(stft_features, window_length, overlap):
     return librosa.istft(stft_features, win_length=window_length, hop_length=overlap)
 
@@ -21,12 +21,12 @@ def revert_features_to_audio(features, phase, window_length, overlap, cleanMean=
     features = np.transpose(features, (1, 0))
     return inverse_stft_transform(features, window_length=window_length, overlap=overlap)
 
-
+#播放
 def play(audio, sample_rate):
     # ipd.display(ipd.Audio(data=audio, rate=sample_rate))  # load a local WAV file
     sd.play(audio, sample_rate, blocking=True)
 
-
+#向纯净语音中添加噪声
 def add_noise_to_clean_audio(clean_audio, noise_signal):
     if len(clean_audio) >= len(noise_signal):
         # print("The noisy signal is smaller than the clean audio input. Duplicating the noise.")
@@ -43,17 +43,19 @@ def add_noise_to_clean_audio(clean_audio, noise_signal):
     noisyAudio = clean_audio + np.sqrt(speech_power / noise_power) * noiseSegment
     return noisyAudio
 
+#获取语音文件的序列和采样率sr
 def read_audio(filepath, sample_rate, normalize=True):
+    print(filepath)
     audio, sr = librosa.load(filepath, sr=sample_rate)
-    if normalize is True:
-        div_fac = 1 / np.max(np.abs(audio)) / 3.0
-        audio = audio * div_fac
+    if normalize is True: #如果是纯净语音
+        div_fac = 1 / np.max(np.abs(audio)) / 3.0 #取权重，1除以语音中最大的值*3.0
+        audio = audio * div_fac #原始语音乘以权重
         # audio = librosa.util.normalize(audio)
     return audio, sr
 
-
+#准备输入数据 特征
 def prepare_input_features(stft_features, numSegments, numFeatures):
-    noisySTFT = np.concatenate([stft_features[:, 0:numSegments - 1], stft_features], axis=1)
+    noisySTFT = np.concatenate([stft_features[:, 0:numSegments - 1], stft_features], axis=1) # 取前7列拼到前面，拼之后的shape=(129,208)
     stftSegments = np.zeros((numFeatures, numSegments, noisySTFT.shape[1] - numSegments + 1))
 
     for index in range(noisySTFT.shape[1] - numSegments + 1):

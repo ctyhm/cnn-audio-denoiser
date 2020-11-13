@@ -11,44 +11,55 @@ from sklearn.preprocessing import StandardScaler
 
 
 np.random.seed(999)
-tf.random.set_seed(999)
+tf.compat.v1.set_random_seed(999)
 
 
 class Dataset:
     def __init__(self, clean_filenames, noise_filenames, **config):
         self.clean_filenames = clean_filenames
         self.noise_filenames = noise_filenames
-        self.sample_rate = config['fs']
-        self.overlap = config['overlap']
-        self.window_length = config['windowLength']
-        self.audio_max_duration = config['audio_max_duration']
+        self.sample_rate = config['fs'] #抽样率
+        self.overlap = config['overlap'] #重叠
+        self.window_length = config['windowLength'] #窗口长度
+        self.audio_max_duration = config['audio_max_duration'] #音频最大时长
 
+    #噪声抽样
     def _sample_noise_filename(self):
+        #随机抽取
         return np.random.choice(self.noise_filenames)
 
+    #删除空白帧
     def _remove_silent_frames(self, audio):
         trimed_audio = []
+        #切分 将音频信号分成非静音间隔
         indices = librosa.effects.split(audio, hop_length=self.overlap, top_db=20)
-
+        # [4096,22400]
         for index in indices:
+            #将切好的帧合并
             trimed_audio.extend(audio[index[0]: index[1]])
         return np.array(trimed_audio)
 
+    #语句缩放
     def _phase_aware_scaling(self, clean_spectral_magnitude, clean_phase, noise_phase):
+        #形状一致
         assert clean_phase.shape == noise_phase.shape, "Shapes must match."
         return clean_spectral_magnitude * np.cos(clean_phase - noise_phase)
 
     def get_noisy_audio(self, *, filename):
         return read_audio(filename, self.sample_rate)
+    #获取噪声数据集，读取噪声文件
 
     def _audio_random_crop(self, audio, duration):
+        #读取时长，单位：秒
         audio_duration_secs = librosa.core.get_duration(audio, self.sample_rate)
 
         ## duration: length of the cropped audio in seconds
+        #如果设置的最大时长大于语音时长就返回语音序列
         if duration >= audio_duration_secs:
             # print("Passed duration greater than audio duration of: ", audio_duration_secs)
             return audio
 
+        #取后半部分，长度为最大时长，起点为当期语音减去最大时长点，终点为语音最后一个点
         audio_duration_ms = math.floor(audio_duration_secs * self.sample_rate)
         duration_ms = math.floor(duration * self.sample_rate)
         idx = np.random.randint(0, audio_duration_ms - duration_ms)
@@ -70,30 +81,34 @@ class Dataset:
         noisyAudio = clean_audio + np.sqrt(speech_power / noise_power) * noiseSegment
         return noisyAudio
 
+    #处理单个语音（主要操作）
     def parallel_audio_processing(self, clean_filename):
-
+        # 获取语音序列和采样率
         clean_audio, _ = read_audio(clean_filename, self.sample_rate)
 
-        # remove silent frame from clean audio
+        # remove silent frame from clean audio 删除空白帧，将0db的阈值帧删除
         clean_audio = self._remove_silent_frames(clean_audio)
 
+        #噪声抽样
         noise_filename = self._sample_noise_filename()
 
-        # read the noise filename
+        # read the noise filename 读取噪声和采样率
         noise_audio, sr = read_audio(noise_filename, self.sample_rate)
 
-        # remove silent frame from noise audio
+        # remove silent frame from noise audio 删除空白帧
         noise_audio = self._remove_silent_frames(noise_audio)
 
-        # sample random fixed-sized snippets of audio
+        # sample random fixed-sized snippets of audio 将抽样语音切为固定时长
         clean_audio = self._audio_random_crop(clean_audio, duration=self.audio_max_duration)
 
-        # add noise to input image
+        # add noise to input image 加噪处理
         noiseInput = self._add_noise_to_clean_audio(clean_audio, noise_audio)
 
         # extract stft features from noisy audio
+        #自定义函数，特征提取初始化
         noisy_input_fe = FeatureExtractor(noiseInput, windowLength=self.window_length, overlap=self.overlap,
                                           sample_rate=self.sample_rate)
+        #获取傅里叶变换后的语谱图，
         noise_spectrogram = noisy_input_fe.get_stft_spectrogram()
 
         # Or get the phase angle (in radians)
@@ -124,28 +139,36 @@ class Dataset:
 
         return noise_magnitude, clean_magnitude, noise_phase
 
+    #创建数据集，用于训练测试
+    #入参[,,前缀，每一批次的大小]
     def create_tf_record(self, *, prefix, subset_size, parallel=True):
         counter = 0
-        p = multiprocessing.Pool(multiprocessing.cpu_count())
-
+        # 多进程处理方式，多核同时处理，提高速度
+        #p = multiprocessing.Pool(multiprocessing.cpu_count())
+        #假设有10000条语音，每一批2000个的话就从0到1999个为一个训练集，一共5个训练集
+        print(len(self.clean_filenames))
+        print(subset_size)
+        # 遍历传入的每一个数据文件，步长是subset_size,训练集设置为4000步长，测试集是2000步长
         for i in range(0, len(self.clean_filenames), subset_size):
-
+            #记录每个训练集的名称
             tfrecord_filename = './records/' + prefix + '_' + str(counter) + '.tfrecords'
-
+            #如果文件存在则跳过，counter计数器加一
             if os.path.isfile(tfrecord_filename):
                 print(f"Skipping {tfrecord_filename}")
                 counter += 1
                 continue
-
+            #创建tfrecord文件,等待写入
             writer = tf.io.TFRecordWriter(tfrecord_filename)
+            # 从第i个到第i+subset_size个为一个语音批次
             clean_filenames_sublist = self.clean_filenames[i:i + subset_size]
 
             print(f"Processing files from: {i} to {i + subset_size}")
-            if parallel:
-                out = p.map(self.parallel_audio_processing, clean_filenames_sublist)
-            else:
-                out = [self.parallel_audio_processing(filename) for filename in clean_filenames_sublist]
-
+            #if parallel:
+             #   out = p.map(self.parallel_audio_processing, clean_filenames_sublist)
+           # else:
+            #  out是将一个批次的语音处理后的列表（重点部分）
+            out = [self.parallel_audio_processing(filename) for filename in clean_filenames_sublist]
+            print(len(out))
             for o in out:
                 noise_stft_magnitude = o[0]
                 clean_stft_magnitude = o[1]
@@ -157,13 +180,15 @@ class Dataset:
                 clean_stft_magnitude = np.transpose(clean_stft_magnitude, (1, 0))
                 noise_stft_phase = np.transpose(noise_stft_phase, (1, 0))
 
-                noise_stft_mag_features = np.expand_dims(noise_stft_mag_features, axis=3)
-                clean_stft_magnitude = np.expand_dims(clean_stft_magnitude, axis=2)
+                noise_stft_mag_features = np.expand_dims(noise_stft_mag_features, axis=3) # 再加一维shape=(201,129,8,1)
+                clean_stft_magnitude = np.expand_dims(clean_stft_magnitude, axis=2) # 再加一维shape=(201,129,1)
 
                 for x_, y_, p_ in zip(noise_stft_mag_features, clean_stft_magnitude, noise_stft_phase):
                     y_ = np.expand_dims(y_, 2)
                     example = get_tf_feature(x_, y_, p_)
+                    # 写入数据
                     writer.write(example.SerializeToString())
 
+            # 计数器加一，关闭文件
             counter += 1
             writer.close()
