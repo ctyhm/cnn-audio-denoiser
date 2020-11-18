@@ -22,11 +22,20 @@ class Dataset:
         self.overlap = config['overlap'] #重叠
         self.window_length = config['windowLength'] #窗口长度
         self.audio_max_duration = config['audio_max_duration'] #音频最大时长
+        self.count = 0
 
     #噪声抽样
     def _sample_noise_filename(self):
         #随机抽取
-        return np.random.choice(self.noise_filenames)
+        # return np.random.choice(self.noise_filenames)
+
+        # 此处修改为顺序取噪声数据
+        if(self.count-len(self.noise_filenames)>=0):
+            self.count = 1
+        else:
+            self.count = self.count + 1
+        print(self.count)
+        return self.noise_filenames[self.count-1]
 
     #删除空白帧
     def _remove_silent_frames(self, audio):
@@ -78,7 +87,9 @@ class Dataset:
 
         speech_power = np.sum(clean_audio ** 2)
         noise_power = np.sum(noiseSegment ** 2)
-        noisyAudio = clean_audio + np.sqrt(speech_power / noise_power) * noiseSegment
+        # noisyAudio = clean_audio + np.sqrt(speech_power / noise_power) * noiseSegment
+        # 此处改为20倍
+        noisyAudio = clean_audio + 20 * noiseSegment
         return noisyAudio
 
     #处理单个语音（主要操作）
@@ -145,10 +156,10 @@ class Dataset:
         counter = 0
         # 多进程处理方式，多核同时处理，提高速度
         #p = multiprocessing.Pool(multiprocessing.cpu_count())
-        #假设有10000条语音，每一批2000个的话就从0到1999个为一个训练集，一共5个训练集
+        # 假设有10000条语音，每一批2000个的话就从0到1999个为第一个训练集tfrecords，一共5个训练集
         print(len(self.clean_filenames))
         print(subset_size)
-        # 遍历传入的每一个数据文件，步长是subset_size,训练集设置为4000步长，测试集是2000步长
+        # 遍历传入的每一个数据文件，步长是subset_size,训练集设置为2000步长，测试集是1000步长
         for i in range(0, len(self.clean_filenames), subset_size):
             #记录每个训练集的名称
             tfrecord_filename = './records/' + prefix + '_' + str(counter) + '.tfrecords'
@@ -167,6 +178,7 @@ class Dataset:
              #   out = p.map(self.parallel_audio_processing, clean_filenames_sublist)
            # else:
             #  out是将一个批次的语音处理后的列表（重点部分）
+            #  self.parallel_audio_processing(filename)是将语音文件加噪后傅里叶变换之后的数据(核心部分)
             out = [self.parallel_audio_processing(filename) for filename in clean_filenames_sublist]
             print(len(out))
             for o in out:

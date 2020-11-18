@@ -4,6 +4,7 @@ import numpy as np
 # clean_phase = np.angle(train_specturm)
 # noise_phase = np.angle(val_specturm)
 # clean_magnitude = np.abs(train_specturm)
+'''
 noise_stft_mag_features = np.array([1]*201*129*8*1)
 clean_stft_magnitude = np.array([2]*201*129*1)
 noise_stft_phase = np.array([3]*201*129)
@@ -21,6 +22,8 @@ for x_, y_, p_ in zip(noise_stft_mag_features, clean_stft_magnitude, noise_stft_
     print(x_)
     print(y_)
     print(p_)
+'''
+
 
 # print(clean_magnitude.shape)
 # print(np.mean(clean_magnitude))
@@ -68,3 +71,36 @@ print(bbb.shape)
 # # cleanAudio, sr = read_audio(os.path.join(mozilla_basepath, 'test', 'common_voice_en_16526.mp3'), sample_rate=fs)
 # print("Min:", np.min(cleanAudio),"Max:",np.max(cleanAudio))
 # print(cleanAudio.shape)
+
+from keras.models import load_model
+import wave
+import struct
+from scipy import *
+import pyworld as pw
+from scipy.io import wavfile
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+import soundfile as sf
+
+# 读取wav文件E:\python_demo\cnn-audio-denoiser\dataset\UrbanSound8K\test\50-1_3_Point1.wav
+root_wavs = 'E:/python_demo/cnn-audio-denoiser/dataset/UrbanSound8K/test/'
+names = os.listdir(root_wavs)
+
+len(names)
+
+cnt = 0
+plt.figure(figsize=(20, 20))
+for name in names:
+    wav_name = root_wavs + name
+    x, fs = sf.read(wav_name)
+    f0, sp, ap = pw.wav2world(x, fs)
+    cnt += 1
+
+    plt.subplot(3, 4, cnt)
+    plt.plot(f0)
+    plt.imshow(np.log(sp), cmap='hot')
+plt.show()
+
+
+
